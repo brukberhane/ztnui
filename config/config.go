@@ -12,15 +12,17 @@ import (
 // Config holds ztnui connection settings.
 // Token is runtime-only and never written to ztnui.json in plaintext.
 type Config struct {
-	Controller string `json:"controller"`
-	Port       int    `json:"port"`
-	Token      string `json:"-"`
+	Controller    string              `json:"controller"`
+	Port          int                 `json:"port"`
+	Token         string              `json:"-"`
+	HiddenMembers map[string][]string `json:"hiddenMembers,omitempty"` // networkID -> node IDs (local UI filter)
 }
 
 type fileConfig struct {
-	Controller string `json:"controller"`
-	Port       int    `json:"port"`
-	Token      string `json:"token,omitempty"`
+	Controller    string              `json:"controller"`
+	Port          int                 `json:"port"`
+	Token         string              `json:"token,omitempty"`
+	HiddenMembers map[string][]string `json:"hiddenMembers,omitempty"`
 }
 
 // Default returns default configuration values.
@@ -109,6 +111,9 @@ func parseConfigFile(cfg *Config, data []byte, sourcePath string) (*Config, erro
 	}
 	cfg.Controller = fc.Controller
 	cfg.Port = fc.Port
+	if len(fc.HiddenMembers) > 0 {
+		cfg.HiddenMembers = fc.HiddenMembers
+	}
 
 	// Migrate legacy plaintext token into secure storage.
 	if t := strings.TrimSpace(fc.Token); t != "" {
@@ -118,7 +123,11 @@ func parseConfigFile(cfg *Config, data []byte, sourcePath string) (*Config, erro
 			return nil, err
 		}
 		if sourcePath != "" {
-			if err := writeConfigFile(sourcePath, fc.Controller, fc.Port); err != nil {
+			if err := writeConfigFile(sourcePath, fileConfig{
+				Controller:    fc.Controller,
+				Port:          fc.Port,
+				HiddenMembers: fc.HiddenMembers,
+			}); err != nil {
 				return nil, err
 			}
 		}
@@ -126,8 +135,7 @@ func parseConfigFile(cfg *Config, data []byte, sourcePath string) (*Config, erro
 	return cfg, nil
 }
 
-func writeConfigFile(path, controller string, port int) error {
-	fc := fileConfig{Controller: controller, Port: port}
+func writeConfigFile(path string, fc fileConfig) error {
 	data, err := json.MarshalIndent(fc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -141,11 +149,54 @@ func writeConfigFile(path, controller string, port int) error {
 	return nil
 }
 
+// HiddenMembersSet returns hidden node IDs for a network as a lookup set.
+func (c *Config) HiddenMembersSet(networkID string) map[string]bool {
+	set := make(map[string]bool)
+	if c == nil || c.HiddenMembers == nil {
+		return set
+	}
+	for _, id := range c.HiddenMembers[networkID] {
+		set[id] = true
+	}
+	return set
+}
+
+// IsMemberHidden reports whether a node is hidden for a network.
+func (c *Config) IsMemberHidden(networkID, nodeID string) bool {
+	return c.HiddenMembersSet(networkID)[nodeID]
+}
+
+// SetMemberHidden adds or removes a locally hidden member for a network.
+func (c *Config) SetMemberHidden(networkID, nodeID string, hidden bool) {
+	if c.HiddenMembers == nil {
+		c.HiddenMembers = make(map[string][]string)
+	}
+	ids := make([]string, 0, len(c.HiddenMembers[networkID]))
+	for _, id := range c.HiddenMembers[networkID] {
+		if id != nodeID {
+			ids = append(ids, id)
+		}
+	}
+	if hidden {
+		ids = append(ids, nodeID)
+	}
+	if len(ids) == 0 {
+		delete(c.HiddenMembers, networkID)
+	} else {
+		c.HiddenMembers[networkID] = ids
+	}
+}
+
 // Save writes non-secret settings to ~/.config/ztnui/ztnui.json.
 func (c *Config) Save() error {
 	path, err := ConfigFilePath()
 	if err != nil {
 		return err
 	}
-	return writeConfigFile(path, c.Controller, c.Port)
+	fc := fileConfig{
+		Controller:    c.Controller,
+		Port:          c.Port,
+		HiddenMembers: c.HiddenMembers,
+	}
+	return writeConfigFile(path, fc)
 }

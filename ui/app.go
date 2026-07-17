@@ -16,9 +16,14 @@ const (
 	screenAuth = iota
 	screenClient
 	screenServer
-	screenNodeInfo
-	screenSettings
 	screenMembers
+)
+
+const (
+	overlayNone = iota
+	overlayHelp
+	overlayNodeInfo
+	overlaySettings
 )
 
 type appState struct {
@@ -48,6 +53,7 @@ type Model struct {
 	apiClient     *api.Client
 	cfg           *config.Config
 	ready         bool
+	overlay       int
 }
 
 func NewModel(cfg *config.Config, client *api.Client, needsAuth bool, authReason string) Model {
@@ -104,6 +110,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if key == "q" && !m.inTextInput() {
+			if m.overlay != overlayNone {
+				m.overlay = overlayNone
+				m.state.lastError = ""
+				return m, nil
+			}
 			return m, tea.Quit
 		}
 
@@ -111,6 +122,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key == "esc" {
 				if m.screen == screenAuth {
 					return m, tea.Quit
+				}
+				if m.overlay == overlaySettings {
+					m.overlay = overlayNone
+					m.state.lastError = ""
+					return m, nil
 				}
 				m, cmd := m.goBack()
 				return m, cmd
@@ -125,7 +141,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		} else {
-			if !m.inTextInput() && m.isRootTab() {
+			if key == "h" {
+				m, cmd := m.toggleOverlay(overlayHelp)
+				return m, cmd
+			}
+			if key == "n" {
+				m, cmd := m.toggleOverlay(overlayNodeInfo)
+				return m, cmd
+			}
+			if key == "," {
+				m, cmd := m.toggleOverlay(overlaySettings)
+				return m, cmd
+			}
+			if m.overlay == overlayNone && m.isRootTab() {
 				m, cmd, ok := m.handleRootTabKeys(key)
 				if ok {
 					return m, cmd
@@ -352,7 +380,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			_, _, _, _, contentH := m.layout()
 			m.members.resize(m.width, contentH)
-			m.members.setMembers(msg.members)
+			m.members.setMembers(msg.members, m.cfg.HiddenMembersSet(m.members.networkID))
 		}
 
 	case memberUpdatedMsg:
@@ -372,7 +400,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			_, _, _, _, contentH := m.layout()
 			m.members.resize(m.width, contentH)
-			m.members.setMembers(m.members.members)
+			m.members.setMembers(m.members.members, m.cfg.HiddenMembersSet(m.members.networkID))
 			if m.members.view == membersViewNameInput {
 				m.members.view = membersViewDetail
 			} else if m.members.view == membersViewIPAdd {
@@ -389,7 +417,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.state.lastError = msg.err.Error()
 		} else {
-			m.state.lastSuccess = fmt.Sprintf("Deleted member %s", msg.nodeID)
+			m.state.lastSuccess = fmt.Sprintf(
+				"Removed member %s — reappears unauthorized if node still joined",
+				msg.nodeID,
+			)
+			m.members.view = membersViewList
+			cmds = append(cmds, fetchMembers(m.apiClient, m.members.networkID))
+		}
+
+	case memberAuthorizedMsg:
+		m.state.loading = false
+		if msg.err != nil {
+			m.state.lastError = msg.err.Error()
+		} else {
+			m.state.lastSuccess = fmt.Sprintf("Authorized member %s", msg.nodeID)
 			m.members.view = membersViewList
 			cmds = append(cmds, fetchMembers(m.apiClient, m.members.networkID))
 		}
@@ -397,16 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// delegate to sub-models
 	var subCmd tea.Cmd
-	switch m.screen {
-	case screenAuth:
-		m.auth.input, subCmd = m.auth.input.Update(msg)
-	case screenClient:
-		m.client, subCmd = m.client.Update(msg)
-	case screenServer:
-		m.server, subCmd = m.server.Update(msg)
-	case screenMembers:
-		m.members, subCmd = m.members.Update(msg)
-	case screenSettings:
+	if m.overlay == overlaySettings {
 		switch m.settings.focusIndex {
 		case 0:
 			m.settings.controller, subCmd = m.settings.controller.Update(msg)
@@ -414,6 +446,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.settings.port, subCmd = m.settings.port.Update(msg)
 		case 2:
 			m.settings.token, subCmd = m.settings.token.Update(msg)
+		}
+	} else if m.overlay == overlayNone {
+		switch m.screen {
+		case screenAuth:
+			m.auth.input, subCmd = m.auth.input.Update(msg)
+		case screenClient:
+			m.client, subCmd = m.client.Update(msg)
+		case screenServer:
+			m.server, subCmd = m.server.Update(msg)
+		case screenMembers:
+			m.members, subCmd = m.members.Update(msg)
 		}
 	}
 	if subCmd != nil {
@@ -424,17 +467,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) inTextInput() bool {
+	if m.overlay == overlaySettings {
+		return true
+	}
 	switch m.screen {
 	case screenAuth:
-		return true
-	case screenSettings:
 		return true
 	case screenClient:
 		return m.client.view == clientViewJoin
 	case screenServer:
 		return m.server.view == serverViewEdit || m.server.view == serverViewCreateForm
 	case screenMembers:
-		return m.members.view == membersViewNameInput || m.members.view == membersViewIPAdd
+		return m.members.view == membersViewNameInput || m.members.view == membersViewIPAdd || m.members.view == membersViewAdd
 	}
 	return false
 }
@@ -464,6 +508,15 @@ func (m Model) isControllerScreen() bool {
 func (m Model) handleActionKeys(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	key := msg.String()
 
+	switch m.overlay {
+	case overlayHelp:
+		return m, nil, true
+	case overlayNodeInfo:
+		return m.handleNodeInfoKeys(key)
+	case overlaySettings:
+		return m.handleSettingsKeys(key)
+	}
+
 	switch m.screen {
 	case screenAuth:
 		return m.handleAuthKeys(key)
@@ -473,13 +526,25 @@ func (m Model) handleActionKeys(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 		return m.handleServerKeys(key)
 	case screenMembers:
 		return m.handleMembersKeys(key)
-	case screenSettings:
-		return m.handleSettingsKeys(key)
 	}
 	return m, nil, false
 }
 
+func (m Model) handleNodeInfoKeys(key string) (Model, tea.Cmd, bool) {
+	// r is handled globally; esc/q/h are handled by overlay toggles.
+	return m, nil, true
+}
+
+func (m Model) closeOverlay() Model {
+	m.overlay = overlayNone
+	m.state.lastError = ""
+	return m
+}
+
 func (m Model) goBack() (Model, tea.Cmd) {
+	if m.overlay != overlayNone {
+		return m.closeOverlay(), nil
+	}
 	if m.isControllerScreen() {
 		m.state.lastError = ""
 	}
@@ -487,14 +552,14 @@ func (m Model) goBack() (Model, tea.Cmd) {
 	case screenClient:
 		switch m.client.view {
 		case clientViewNetworks:
-			return m.switchTab(-1)
+			return m, nil
 		default:
 			m.client.view = clientViewNetworks
 		}
 	case screenServer:
 		switch m.server.view {
 		case serverViewList:
-			return m.switchTab(-1)
+			return m, nil
 		case serverViewCreateForm:
 			m.server.blurCreateForm()
 			m.server.view = serverViewCreate
@@ -510,6 +575,8 @@ func (m Model) goBack() (Model, tea.Cmd) {
 			m.server.view = serverViewDetail
 		case membersViewNameInput:
 			m.members.view = membersViewDetail
+		case membersViewAdd:
+			m.members.view = membersViewList
 		case membersViewIPAdd:
 			m.members.view = membersViewIPList
 		case membersViewIPList:
@@ -517,8 +584,6 @@ func (m Model) goBack() (Model, tea.Cmd) {
 		default:
 			m.members.view = membersViewList
 		}
-	case screenSettings, screenNodeInfo:
-		return m.switchTab(-1)
 	}
 	return m, nil
 }
@@ -526,9 +591,15 @@ func (m Model) goBack() (Model, tea.Cmd) {
 func (m Model) refresh() (Model, tea.Cmd) {
 	m.state.loading = true
 	m.state.lastError = ""
-	switch m.screen {
-	case screenNodeInfo:
+
+	if m.overlay == overlayNodeInfo {
 		return m, fetchStatus(m.apiClient)
+	}
+	if m.overlay == overlaySettings || m.overlay == overlayHelp {
+		return m, nil
+	}
+
+	switch m.screen {
 	case screenClient:
 		switch m.client.view {
 		case clientViewPeers:
@@ -869,17 +940,46 @@ func (m Model) handleServerKeys(key string) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+func (m Model) toggleMemberHidden(nodeID string) (Model, tea.Cmd, bool) {
+	if nodeID == "" {
+		return m, nil, true
+	}
+	networkID := m.members.networkID
+	hidden := m.cfg.IsMemberHidden(networkID, nodeID)
+	m.cfg.SetMemberHidden(networkID, nodeID, !hidden)
+	if err := m.cfg.Save(); err != nil {
+		m.state.lastError = err.Error()
+		return m, nil, true
+	}
+	if hidden {
+		m.state.lastSuccess = fmt.Sprintf("Unhidden member %s", nodeID)
+	} else {
+		m.state.lastSuccess = fmt.Sprintf("Hidden member %s (local only)", nodeID)
+	}
+	m.members.rebuildTable(m.cfg.HiddenMembersSet(networkID))
+	return m, nil, true
+}
+
 func (m Model) handleMembersKeys(key string) (Model, tea.Cmd, bool) {
 	switch m.members.view {
 	case membersViewList:
 		switch key {
+		case "t":
+			m.members.toggleShowHidden(m.cfg.HiddenMembersSet(m.members.networkID))
+			return m, nil, true
+		case "H":
+			id := m.members.selectedMemberID()
+			return m.toggleMemberHidden(id)
+		case "+":
+			m.members.openAddMember()
+			return m, nil, true
 		case "a":
 			return m.toggleMemberField("authorized")
 		case "b":
 			return m.toggleMemberField("bridge")
 		case "o":
 			return m.toggleMemberField("noAutoAssign")
-		case "n":
+		case "r":
 			id := m.members.selectedMemberID()
 			if mem := m.members.findMember(id); mem != nil {
 				m.members.selectedID = id
@@ -945,7 +1045,7 @@ func (m Model) handleMembersKeys(key string) (Model, tea.Cmd, bool) {
 				return m, nil, true
 			}
 			return m, nil, true
-		case "n":
+		case "r":
 			m.members.settingFocus = 0
 			m.members.openNameInput(m.members.detail)
 			return m, nil, true
@@ -962,6 +1062,8 @@ func (m Model) handleMembersKeys(key string) (Model, tea.Cmd, bool) {
 			m.members.settingFocus = 4
 			m.members.openIPList(m.members.detail)
 			return m, nil, true
+		case "H":
+			return m.toggleMemberHidden(m.members.detail.Address)
 		case "delete", "backspace":
 			m.members.selectedID = m.members.detail.Address
 			m.members.view = membersViewConfirmDelete
@@ -1011,12 +1113,23 @@ func (m Model) handleMembersKeys(key string) (Model, tea.Cmd, bool) {
 			}
 			mem.IPAssignments = append(mem.IPAssignments, ip)
 		})
+	case membersViewAdd:
+		if !isSubmitKey(key) {
+			return m, nil, false
+		}
+		nodeID := strings.TrimSpace(m.members.addInput.Value())
+		if !isValidNodeID(nodeID) {
+			m.state.lastError = "Node ID must be 10 hex characters"
+			return m, nil, true
+		}
+		m.state.loading = true
+		return m, authorizeMember(m.apiClient, m.members.networkID, nodeID), true
 	case membersViewConfirmDelete:
 		if key == "y" {
 			m.state.loading = true
 			return m, deleteMember(m.apiClient, m.members.networkID, m.members.selectedID), true
 		}
-		if key == "esc" || key == "h" {
+		if key == "esc" {
 			m.members.view = membersViewList
 			return m, nil, true
 		}
@@ -1120,10 +1233,28 @@ func (m Model) handleSettingsKeys(key string) (Model, tea.Cmd, bool) {
 		}
 		m.needsAuth = false
 		m.state.lastSuccess = "Settings saved"
-		m.screen = screenClient
+		m.overlay = overlayNone
 		return m, fetchStatus(m.apiClient), true
 	}
 	return m, nil, false
+}
+
+func (m Model) toggleOverlay(o int) (Model, tea.Cmd) {
+	if m.overlay == o {
+		m.overlay = overlayNone
+		m.state.lastError = ""
+		return m, nil
+	}
+	m.overlay = o
+	m.state.lastError = ""
+	switch o {
+	case overlayNodeInfo:
+		m.state.loading = true
+		return m, fetchStatus(m.apiClient)
+	case overlaySettings:
+		m.loadSettingsForm()
+	}
+	return m, nil
 }
 
 func (m Model) View() string {
@@ -1148,25 +1279,30 @@ func (m Model) View() string {
 	}
 
 	var mainContent string
-	switch m.screen {
-	case screenAuth:
-		mainContent = m.auth.View()
-	case screenClient:
-		mainContent = m.client.View(m.state.status)
-	case screenServer:
-		mainContent = m.server.View(
-			m.state.controllerStatus,
-			m.state.hasController,
-			m.state.controllerChecked,
-			m.state.loading,
-			len(m.state.controllerNetworks),
-		)
-	case screenMembers:
-		mainContent = m.members.View()
-	case screenSettings:
+	switch m.overlay {
+	case overlayHelp:
+		mainContent = m.viewHelpOverlay()
+	case overlayNodeInfo:
+		mainContent = m.viewNodeInfoOverlay()
+	case overlaySettings:
 		mainContent = m.viewSettings()
-	case screenNodeInfo:
-		mainContent = renderNodeInfo(m.state.status) + "\n" + HelpStyle.Render("tab/H/L switch tabs  r refresh  q quit")
+	default:
+		switch m.screen {
+		case screenAuth:
+			mainContent = m.auth.View()
+		case screenClient:
+			mainContent = m.client.View(m.state.status)
+		case screenServer:
+			mainContent = m.server.View(
+				m.state.controllerStatus,
+				m.state.hasController,
+				m.state.controllerChecked,
+				m.state.loading,
+				len(m.state.controllerNetworks),
+			)
+		case screenMembers:
+			mainContent = m.members.View()
+		}
 	}
 
 	sections = append(sections, lipgloss.Place(m.width, contentH, lipgloss.Left, lipgloss.Top, mainContent))
@@ -1191,9 +1327,23 @@ func (m Model) viewSettings() string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("tab focus  enter/ctrl+s save  H/L switch tabs  q quit"))
+	b.WriteString(HelpStyle.Render("tab focus  enter/ctrl+s save  esc close  q quit"))
 	b.WriteString("\n")
 	b.WriteString(SubtitleStyle.Render(fmt.Sprintf("Config: %s", m.cfg.BaseURL())))
+	return b.String()
+}
+
+func (m Model) viewNodeInfoOverlay() string {
+	var b strings.Builder
+	b.WriteString(HeaderStyle.Render("Node Info"))
+	b.WriteString("\n\n")
+	if m.state.status == nil {
+		b.WriteString("Loading...")
+	} else {
+		b.WriteString(renderNodeInfo(m.state.status))
+	}
+	b.WriteString("\n")
+	b.WriteString(HelpStyle.Render("esc/q close  h help  r refresh"))
 	return b.String()
 }
 
@@ -1202,6 +1352,14 @@ func (m Model) buildStatusBar() string {
 	if m.state.loading {
 		parts = append(parts, "Loading...")
 	}
+	switch m.overlay {
+	case overlayHelp:
+		parts = append(parts, "help")
+	case overlayNodeInfo:
+		parts = append(parts, "node info")
+	case overlaySettings:
+		parts = append(parts, "settings")
+	}
 	if m.state.status != nil {
 		parts = append(parts, fmt.Sprintf("node:%s", m.state.status.Address))
 	}
@@ -1209,6 +1367,6 @@ func (m Model) buildStatusBar() string {
 	if m.state.controllerStatus != nil {
 		parts = append(parts, fmt.Sprintf("controller:%s", boolStr(m.state.controllerStatus.Controller)))
 	}
-	parts = append(parts, "tab/H/L tabs  h back  q quit  r refresh")
+	parts = append(parts, "tab/H/L switch  h help  n node  , settings  q quit  r refresh")
 	return strings.Join(parts, " │ ")
 }

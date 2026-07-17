@@ -89,6 +89,12 @@ type memberDeletedMsg struct {
 	err    error
 }
 
+type memberAuthorizedMsg struct {
+	nodeID string
+	member *api.ControllerNetworkMember
+	err    error
+}
+
 type errorMsg struct {
 	err error
 }
@@ -217,8 +223,24 @@ func updateMember(client *api.Client, networkID, nodeID string, member *api.Cont
 
 func deleteMember(client *api.Client, networkID, nodeID string) tea.Cmd {
 	return func() tea.Msg {
+		// ZeroTier recreates member records when a node still contacts the network.
+		// Deauthorize and clear IPs before delete (per controller docs / issue #859).
+		if mem, err := client.ControllerNetworkMember(context.Background(), networkID, nodeID); err == nil && mem != nil {
+			mem.Authorized = false
+			mem.IPAssignments = nil
+			_, _ = client.UpdateMember(context.Background(), networkID, nodeID, mem)
+		}
 		err := client.DeleteMember(context.Background(), networkID, nodeID)
 		return memberDeletedMsg{nodeID: nodeID, err: err}
+	}
+}
+
+func authorizeMember(client *api.Client, networkID, nodeID string) tea.Cmd {
+	return func() tea.Msg {
+		m, err := client.UpdateMember(context.Background(), networkID, nodeID, &api.ControllerNetworkMember{
+			Authorized: true,
+		})
+		return memberAuthorizedMsg{nodeID: nodeID, member: m, err: err}
 	}
 }
 

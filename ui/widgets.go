@@ -21,11 +21,12 @@ func newTable(columns []table.Column, rows []table.Row, width, height int) table
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderBottom(true).
-		Bold(true)
+		Bold(true).
+		Foreground(AccentColor)
 	s.Selected = s.Selected.
 		Bold(true).
-		Reverse(true)
-	s.Cell = s.Cell
+		Background(AccentColor).
+		Foreground(lipgloss.Color("#000000"))
 	t.SetStyles(s)
 	if width > 0 {
 		t.SetWidth(width)
@@ -88,5 +89,17 @@ func isSubmitKey(key string) bool {
 }
 
 func isBackKey(key string) bool {
-	return key == "esc" || key == "h"
+	return key == "esc"
+}
+
+func isValidNodeID(id string) bool {
+	if len(id) != 10 {
+		return false
+	}
+	for _, c := range id {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
 }

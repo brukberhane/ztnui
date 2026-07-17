@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/brukberhane/ztnui/api"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 )
 
 // networkForm holds editable controller network fields.

@@ -13,14 +13,12 @@ var mainTabs = []struct {
 }{
 	{screenClient, "Client"},
 	{screenServer, "Server"},
-	{screenNodeInfo, "Node Info"},
-	{screenSettings, "Settings"},
 }
 
 func (m Model) showTabBar() bool {
 	switch m.screen {
-	case screenClient, screenServer, screenNodeInfo, screenSettings:
-		return true
+	case screenClient, screenServer:
+		return m.overlay == overlayNone
 	default:
 		return false
 	}
@@ -50,27 +48,6 @@ func (m Model) isRootTab() bool {
 }
 
 func (m Model) handleRootTabKeys(key string) (Model, tea.Cmd, bool) {
-	switch key {
-	case "n":
-		m, cmd := m.activateTab(screenNodeInfo)
-		return m, cmd, true
-	case ",":
-		if m.screen != screenSettings {
-			m, cmd := m.activateTab(screenSettings)
-			return m, cmd, true
-		}
-	case "c":
-		if m.screen != screenServer {
-			m, cmd := m.activateTab(screenClient)
-			return m, cmd, true
-		}
-	case "s":
-		if m.screen != screenClient {
-			m, cmd := m.activateTab(screenServer)
-			return m, cmd, true
-		}
-	}
-
 	prev, next := m.tabNavKeys(key)
 	if prev {
 		m, cmd := m.switchTab(-1)
@@ -84,11 +61,8 @@ func (m Model) handleRootTabKeys(key string) (Model, tea.Cmd, bool) {
 }
 
 func (m Model) tabNavKeys(key string) (prev, next bool) {
-	if m.screen == screenSettings {
-		return key == "H" || key == "h", key == "L"
-	}
 	switch key {
-	case "shift+tab", "H", "h":
+	case "shift+tab", "H":
 		return true, false
 	case "tab", "L":
 		return false, true
@@ -120,6 +94,7 @@ func (m Model) activateTab(screen int) (Model, tea.Cmd) {
 	}
 
 	m.screen = screen
+	m.overlay = overlayNone
 	m.state.lastError = ""
 
 	switch screen {
@@ -136,11 +111,6 @@ func (m Model) activateTab(screen int) (Model, tea.Cmd) {
 			cmds = append(cmds, fetchStatus(m.apiClient))
 		}
 		return m, tea.Batch(cmds...)
-	case screenNodeInfo:
-		return m, fetchStatus(m.apiClient)
-	case screenSettings:
-		m.loadSettingsForm()
-		return m, nil
 	default:
 		return m, nil
 	}
@@ -155,6 +125,7 @@ func (m Model) renderTabBar() string {
 		}
 		parts = append(parts, style.Render(t.label))
 	}
-	hint := HelpStyle.Render("  tab/H/L switch")
-	return lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(parts, " │ ")) + hint
+	bar := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(parts, " │ "))
+	hint := HelpStyle.Render("  h help  n node  , settings")
+	return bar + hint
 }

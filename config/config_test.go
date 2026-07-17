@@ -78,6 +78,18 @@ func TestResolveTokenFromConfig(t *testing.T) {
 	}
 }
 
+func TestSetMemberHidden(t *testing.T) {
+	cfg := Default()
+	cfg.SetMemberHidden("net1", "abc123def0", true)
+	if !cfg.IsMemberHidden("net1", "abc123def0") {
+		t.Fatal("expected member hidden")
+	}
+	cfg.SetMemberHidden("net1", "abc123def0", false)
+	if cfg.IsMemberHidden("net1", "abc123def0") {
+		t.Fatal("expected member unhidden")
+	}
+}
+
 func TestDefaultTokenPathLinux(t *testing.T) {
 	path := DefaultTokenPath()
 	if path != "/var/lib/zerotier-one/authtoken.secret" {

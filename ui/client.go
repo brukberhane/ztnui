@@ -21,15 +21,15 @@ const (
 )
 
 type clientModel struct {
-	view          clientView
-	table         table.Model
-	joinInput     textinput.Model
-	selectedID    string
-	detail        *api.Network
-	settingFocus  int
-	width         int
-	height        int
-	tableHeight   int
+	view         clientView
+	table        table.Model
+	joinInput    textinput.Model
+	selectedID   string
+	detail       *api.Network
+	settingFocus int
+	width        int
+	height       int
+	tableHeight  int
 }
 
 func newClientModel() clientModel {
@@ -124,13 +124,13 @@ func (c *clientModel) View(status *api.Status) string {
 		b.WriteString("\n")
 		b.WriteString(c.table.View())
 		b.WriteString("\n")
-		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  l/enter detail  + join  x leave  p peers  h back  q quit"))
+		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  l/enter detail  + join  x leave  p peers  esc back  h help  q quit"))
 	case clientViewPeers:
 		b.WriteString(SubtitleStyle.Render("Peers"))
 		b.WriteString("\n")
 		b.WriteString(c.table.View())
 		b.WriteString("\n")
-		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  h back  r refresh  q quit"))
+		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  esc back  h help  r refresh  q quit"))
 	case clientViewDetail:
 		b.WriteString(c.renderDetail())
 	case clientViewJoin:
@@ -200,7 +200,7 @@ func (c *clientModel) renderDetail() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("h back  r refresh  q quit"))
+	b.WriteString(HelpStyle.Render("esc back  h help  r refresh  q quit"))
 	return b.String()
 }
 
@@ -225,8 +225,6 @@ func renderClientSettingRow(key, label, desc string, on bool, focused bool) stri
 
 func renderNodeInfo(s *api.Status) string {
 	var b strings.Builder
-	b.WriteString(SubtitleStyle.Render("Node Info"))
-	b.WriteString("\n\n")
 	lines := []struct{ k, v string }{
 		{"Address", s.Address},
 		{"Version", s.Version},

@@ -19,32 +19,40 @@ const (
 	membersViewNameInput
 	membersViewIPList
 	membersViewIPAdd
+	membersViewAdd
 	membersViewConfirmDelete
 )
 
 const memberSettingCount = 5
 
 type membersModel struct {
-	view          membersView
-	networkID     string
-	table         table.Model
-	ipTable       table.Model
-	members       []api.ControllerNetworkMember
-	selectedID    string
-	detail        *api.ControllerNetworkMember
-	settingFocus  int
-	nameInput     textinput.Model
-	ipInput       textinput.Model
-	width         int
-	tableHeight   int
+	view         membersView
+	networkID    string
+	table        table.Model
+	ipTable      table.Model
+	members      []api.ControllerNetworkMember
+	selectedID   string
+	detail       *api.ControllerNetworkMember
+	settingFocus int
+	showHidden   bool
+	visibleCount int
+	hiddenCount  int
+	nameInput    textinput.Model
+	ipInput      textinput.Model
+	addInput     textinput.Model
+	width        int
+	tableHeight  int
 }
 
 func newMembersModel() membersModel {
 	ipInput := newInput("10.147.20.100/24")
 	ipInput.CharLimit = 64
+	addInput := newInput("10-char node ID")
+	addInput.CharLimit = 10
 	return membersModel{
 		nameInput: newInput("e.g. office-router"),
 		ipInput:   ipInput,
+		addInput:  addInput,
 	}
 }
 
@@ -65,10 +73,24 @@ func ipAssignmentSummary(ips []string) string {
 	return fmt.Sprintf("%d assigned (%s …)", len(ips), ips[0])
 }
 
-func (m *membersModel) setMembers(members []api.ControllerNetworkMember) {
+func (m *membersModel) setMembers(members []api.ControllerNetworkMember, hidden map[string]bool) {
 	m.members = members
-	rows := make([]table.Row, 0, len(members))
-	for _, mem := range members {
+	m.rebuildTable(hidden)
+}
+
+func (m *membersModel) rebuildTable(hidden map[string]bool) {
+	rows := make([]table.Row, 0, len(m.members))
+	m.visibleCount = 0
+	m.hiddenCount = 0
+	for _, mem := range m.members {
+		isHidden := hidden[mem.Address]
+		if isHidden {
+			m.hiddenCount++
+		}
+		if isHidden && !m.showHidden {
+			continue
+		}
+		m.visibleCount++
 		auth := "no"
 		if mem.Authorized {
 			auth = "yes"
@@ -77,9 +99,13 @@ func (m *membersModel) setMembers(members []api.ControllerNetworkMember) {
 		if mem.NoAutoAssignIps {
 			auto = "no"
 		}
+		name := memberDisplayName(mem)
+		if isHidden {
+			name = "[hidden] " + name
+		}
 		rows = append(rows, table.Row{
 			mem.Address,
-			truncate(memberDisplayName(mem), 16),
+			truncate(name, 20),
 			auth,
 			boolStr(mem.ActiveBridge),
 			auto,
@@ -89,7 +115,7 @@ func (m *membersModel) setMembers(members []api.ControllerNetworkMember) {
 	}
 	cols := []table.Column{
 		{Title: "Node ID", Width: 12},
-		{Title: "Name", Width: 16},
+		{Title: "Name", Width: 20},
 		{Title: "Auth", Width: 6},
 		{Title: "Bridge", Width: 8},
 		{Title: "AutoIP", Width: 8},
@@ -97,6 +123,11 @@ func (m *membersModel) setMembers(members []api.ControllerNetworkMember) {
 		{Title: "Ver", Width: 8},
 	}
 	m.table = newTable(cols, rows, max(20, m.width-4), m.tableHeight)
+}
+
+func (m *membersModel) toggleShowHidden(hidden map[string]bool) {
+	m.showHidden = !m.showHidden
+	m.rebuildTable(hidden)
 }
 
 func (m *membersModel) setIPTable(ips []string) {
@@ -152,6 +183,12 @@ func (m *membersModel) findMember(id string) *api.ControllerNetworkMember {
 	return nil
 }
 
+func (m *membersModel) openAddMember() {
+	m.addInput.SetValue("")
+	m.addInput.Focus()
+	m.view = membersViewAdd
+}
+
 func (m *membersModel) openNameInput(mem *api.ControllerNetworkMember) {
 	if mem == nil {
 		return
@@ -187,6 +224,8 @@ func (m *membersModel) Update(msg tea.Msg) (membersModel, tea.Cmd) {
 		m.nameInput, cmd = m.nameInput.Update(msg)
 	case membersViewIPAdd:
 		m.ipInput, cmd = m.ipInput.Update(msg)
+	case membersViewAdd:
+		m.addInput, cmd = m.addInput.Update(msg)
 	}
 	return *m, cmd
 }
@@ -198,13 +237,27 @@ func (m *membersModel) View() string {
 
 	switch m.view {
 	case membersViewList:
-		if len(m.members) == 0 {
-			b.WriteString(SubtitleStyle.Render("No members yet. Join devices to this network."))
+		if m.visibleCount == 0 {
+			if m.hiddenCount > 0 && !m.showHidden {
+				b.WriteString(SubtitleStyle.Render(fmt.Sprintf("%d hidden member(s) — press t to show", m.hiddenCount)))
+			} else {
+				b.WriteString(SubtitleStyle.Render("No members yet."))
+				b.WriteString("\n")
+				b.WriteString(HelpStyle.Render("Devices appear here when they join, or press + to authorize a node ID."))
+			}
 		} else {
+			if m.hiddenCount > 0 {
+				state := "off"
+				if m.showHidden {
+					state = "on"
+				}
+				b.WriteString(SubtitleStyle.Render(fmt.Sprintf("Hidden: %d (show %s)", m.hiddenCount, state)))
+				b.WriteString("\n")
+			}
 			b.WriteString(m.table.View())
 		}
 		b.WriteString("\n")
-		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  l/enter detail  a auth  b bridge  o auto-IP  i IPs  n name  delete remove  h back"))
+		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  l/enter detail  + authorize  H hide/unhide  t show hidden  a auth  delete remove  esc back  h help"))
 	case membersViewDetail:
 		b.WriteString(m.renderDetail())
 	case membersViewNameInput:
@@ -221,8 +274,23 @@ func (m *membersModel) View() string {
 		b.WriteString(m.ipInput.View())
 		b.WriteString("\n")
 		b.WriteString(HelpStyle.Render("enter add  esc cancel"))
+	case membersViewAdd:
+		b.WriteString(SubtitleStyle.Render("Authorize member by node ID"))
+		b.WriteString("\n\n")
+		b.WriteString(HelpStyle.Render("Pre-approve a node before it joins, or authorize one waiting for approval."))
+		b.WriteString("\n\n")
+		b.WriteString("Node ID: ")
+		b.WriteString(m.addInput.View())
+		b.WriteString("\n")
+		b.WriteString(HelpStyle.Render("enter authorize  esc cancel"))
 	case membersViewConfirmDelete:
-		b.WriteString(ErrorStyle.Render(fmt.Sprintf("Delete member %s? Press y to confirm, esc to cancel", m.selectedID)))
+		b.WriteString(ErrorStyle.Render(fmt.Sprintf("Remove member %s?", m.selectedID)))
+		b.WriteString("\n\n")
+		b.WriteString(HelpStyle.Render("Deauthorizes, clears IPs, then deletes the controller record."))
+		b.WriteString("\n")
+		b.WriteString(HelpStyle.Render("If the node is still joined to this network, it will reappear unauthorized until it leaves."))
+		b.WriteString("\n\n")
+		b.WriteString(HelpStyle.Render("y confirm  esc cancel"))
 	}
 	return b.String()
 }
@@ -241,7 +309,7 @@ func (m *membersModel) renderIPList() string {
 		b.WriteString(m.ipTable.View())
 		b.WriteString("\n")
 	}
-	b.WriteString(HelpStyle.Render("+ add  x remove selected  h back  q quit"))
+	b.WriteString(HelpStyle.Render("+ add  x remove selected  esc back  h help  q quit"))
 	return b.String()
 }
 
@@ -274,14 +342,14 @@ func (m *membersModel) renderDetail() string {
 	b.WriteString(HelpStyle.Render("  j/k move  space/l toggle or open  i edit IPs"))
 	b.WriteString("\n\n")
 
-	b.WriteString(renderMemberNameRow("n", "Name", mem.Name, m.settingFocus == 0))
+	b.WriteString(renderMemberNameRow("r", "Name", mem.Name, m.settingFocus == 0))
 	b.WriteString(renderMemberToggleRow("a", "Authorized", "Allow this node on the network", mem.Authorized, m.settingFocus == 1))
 	b.WriteString(renderMemberToggleRow("b", "Active bridge", "Relay L2 Ethernet frames", mem.ActiveBridge, m.settingFocus == 2))
 	b.WriteString(renderMemberToggleRow("o", "Auto-assign IPs", "Let controller assign from pool", !mem.NoAutoAssignIps, m.settingFocus == 3))
 	b.WriteString(renderMemberActionRow("i", "IP assignments", ipAssignmentSummary(mem.IPAssignments), m.settingFocus == 4))
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("delete remove  h back  q quit"))
+	b.WriteString(HelpStyle.Render("H hide  delete remove  esc back  h help  q quit"))
 	return b.String()
 }
 

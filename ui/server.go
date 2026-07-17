@@ -163,7 +163,7 @@ func (s *serverModel) View(controllerStatus *api.ControllerStatus, hasController
 		b.WriteString("\n")
 		b.WriteString(HelpStyle.Render("Enable controller in ZeroTier, or point Settings at a remote controller host."))
 		b.WriteString("\n\n")
-		b.WriteString(HelpStyle.Render("h back  q quit"))
+		b.WriteString(HelpStyle.Render("esc back  h help  q quit"))
 		return b.String()
 	}
 
@@ -171,7 +171,7 @@ func (s *serverModel) View(controllerStatus *api.ControllerStatus, hasController
 		b.WriteString("\n")
 		b.WriteString(SubtitleStyle.Render("Checking controller status..."))
 		b.WriteString("\n\n")
-		b.WriteString(HelpStyle.Render("h back  q quit"))
+		b.WriteString(HelpStyle.Render("esc back  h help  q quit"))
 		return b.String()
 	}
 
@@ -195,7 +195,7 @@ func (s *serverModel) View(controllerStatus *api.ControllerStatus, hasController
 			b.WriteString(s.table.View())
 			b.WriteString("\n")
 		}
-		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  l/enter detail  c create  e edit  d delete  m members  h back  q quit"))
+		b.WriteString(HelpStyle.Render("↑/↓ j/k navigate  l/enter detail  c create  e edit  d delete  m members  esc back  h help  q quit"))
 	case serverViewDetail:
 		b.WriteString(s.renderDetail())
 	case serverViewEdit:
@@ -248,7 +248,7 @@ func (s *serverModel) renderDetail() string {
 	}
 	b.WriteString(fmt.Sprintf("  %s %d rule(s)\n", LabelStyle.Render("Rules:"), len(n.Rules)))
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("e edit  R rules  m members  d delete  h back  r refresh  q quit"))
+	b.WriteString(HelpStyle.Render("e edit  R rules  m members  d delete  esc back  h help  r refresh  q quit"))
 	return b.String()
 }
 
@@ -281,7 +281,7 @@ func (s *serverModel) renderCreatePrompt() string {
 	return SubtitleStyle.Render("Create Network") + "\n\n" +
 		"  [1] Quick create (name + IP range)\n" +
 		"  [2] Blank network (random ID)\n\n" +
-		HelpStyle.Render("1/2 or l/enter select  h/esc back  q quit")
+		HelpStyle.Render("1/2 select  esc back  h help  q quit")
 }
 
 func (s *serverModel) renderCreateForm() string {
@@ -311,7 +311,7 @@ func (s *serverModel) renderRules() string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("↑/↓ j/k select  l/enter apply  h back  q quit"))
+	b.WriteString(HelpStyle.Render("↑/↓ j/k select  l/enter apply  esc back  h help  q quit"))
 	return b.String()
 }
 

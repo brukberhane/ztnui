@@ -35,18 +35,16 @@ sudo cat /var/lib/zerotier-one/authtoken.secret
 
 ## Navigation
 
-Four top-level tabs: **Client**, **Server**, **Node Info**, **Settings**.
+Two top-level tabs: **Client** and **Server**. **Node Info** and **Settings** are overlays that can be opened on top of either main screen.
 
 | Key | Action |
 |-----|--------|
 | `tab` / `shift+tab` | Next / previous tab |
 | `H` / `L` | Previous / next tab |
-| `h` | Previous tab (at tab root) / back (in subviews) |
-| `esc` | Back / cancel |
-| `c` | Client tab (except on Server, where `c` creates a network) |
-| `s` | Server tab |
-| `n` | Node Info tab |
-| `,` | Settings tab |
+| `esc` | Back / cancel / close overlay |
+| `h` | Help overlay |
+| `n` | Node Info overlay |
+| `,` | Settings overlay |
 | `q` / `ctrl+c` | Quit (`ctrl+c` always works) |
 | `r` | Refresh current view |
 
@@ -76,7 +74,7 @@ Auth token is **not** stored in this file. Resolution order:
 
 Legacy plaintext `token` fields in `ztnui.json` migrate to encrypted storage on load.
 
-Change host/port/token from the **Settings** tab (`,`).
+Change host/port/token from the **Settings** overlay (`,`).
 
 ## Features
 
@@ -111,7 +109,10 @@ Change host/port/token from the **Settings** tab (`,`).
 |-----|--------|
 | `↑/↓` / `j`/`k` | Navigate |
 | `l` / `enter` | Open detail |
-| `h` / `esc` | Back |
+| `esc` | Back / close overlay |
+| `h` | Help overlay |
+| `n` | Node Info overlay |
+| `,` | Settings overlay |
 
 ### Client
 
@@ -136,18 +137,24 @@ Change host/port/token from the **Settings** tab (`,`).
 
 | Key | Action |
 |-----|--------|
+| `+` | Authorize a node by ID (pre-approve or approve pending) |
+| `H` | Hide / unhide member locally (persisted in config) |
+| `t` | Toggle show hidden members |
 | `a` | Toggle auth |
 | `b` | Toggle active bridge |
 | `o` | Toggle auto-assign IPs |
-| `n` | Set name |
+| `r` | Rename |
 | `i` | IP assignment list (`+` add, `x` remove) |
-| `delete` | Delete member |
+| `delete` | Deauthorize, clear IPs, delete record |
+
+**Note:** ZeroTier recreates member records when a node is still joined to the network. After delete, the node reappears as unauthorized until it leaves (`zerotier-cli leave <nwid>` on the device). Use `H` to hide noisy reappearing nodes locally, `t` to show them again, or `a` to block access without deleting.
 
 ### Forms
 
 | Key | Action |
 |-----|--------|
 | `tab` / `shift+tab` | Next / previous field |
+| `space` | Toggle checkbox |
 | `enter` | Save / submit |
 | `ctrl+s` | Save (network edit, settings) |
 | `esc` | Cancel |
