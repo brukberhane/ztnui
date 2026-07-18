@@ -140,6 +140,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(cmds...)
 				}
 			}
+			if key == "tab" || key == "shift+tab" {
+				if m.overlay == overlaySettings {
+					if key == "tab" {
+						m.settings.focusField((m.settings.focusIndex + 1) % 3)
+					} else {
+						m.settings.focusField((m.settings.focusIndex + 2) % 3)
+					}
+					return m, nil
+				}
+				if m.screen == screenServer {
+					if m.server.view == serverViewEdit {
+						if key == "tab" {
+							m.server.form.nextFocus()
+						} else {
+							m.server.form.prevFocus()
+						}
+						return m, nil
+					}
+					if m.server.view == serverViewCreateForm {
+						if key == "tab" {
+							m.server.createFocus = (m.server.createFocus + 1) % 4
+						} else {
+							m.server.createFocus = (m.server.createFocus + 3) % 4
+						}
+						m.server.focusCreateField()
+						return m, nil
+					}
+				}
+				return m, nil
+			}
+			if key == "up" || key == "down" {
+				if m.overlay == overlaySettings {
+					if key == "up" {
+						m.settings.focusField((m.settings.focusIndex + 2) % 3)
+					} else {
+						m.settings.focusField((m.settings.focusIndex + 1) % 3)
+					}
+					return m, nil
+				}
+				if m.screen == screenServer {
+					if m.server.view == serverViewEdit && m.server.form.focusIndex != 13 {
+						if key == "up" {
+							m.server.form.prevFocus()
+						} else {
+							m.server.form.nextFocus()
+						}
+						return m, nil
+					}
+					if m.server.view == serverViewCreateForm {
+						if key == "up" {
+							m.server.createFocus = (m.server.createFocus + 3) % 4
+						} else {
+							m.server.createFocus = (m.server.createFocus + 1) % 4
+						}
+						m.server.focusCreateField()
+						return m, nil
+					}
+				}
+			}
 		} else {
 			if key == "h" {
 				m, cmd := m.toggleOverlay(overlayHelp)
